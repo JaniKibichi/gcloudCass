@@ -16,14 +16,14 @@ require_once('smsDB.php');
  
 
 //Check if a POST happened and if $text is empty 
-if (isset($_POST['from'])){
+if (!empty($_POST['from'])){
 // Be sure to include the file you've just downloaded
 require_once('AfricasTalkingGateway.php');
 require_once('config.php');
 
 //check if phoneNumber is user from Users Table
                   $isQuery =$session->execute(new Cassandra\SimpleStatement(
-		 "SELECT * FROM `".$usrTable."` WHERE `phoneNumber` LIKE '%".$from."%' LIMIT 1"));
+		 "SELECT * FROM smsplay.users WHERE phoneNumber='".$from."' LIMIT 1"));
              
                               
 //Check is users details are in
@@ -31,7 +31,7 @@ require_once('config.php');
 if(empty($isQuery) && empty($text)){
     // Create in USERS Table
           $secondUsrQuery = $session->execute(new Cassandra\SimpleStatement(
-	"INSERT INTO `".$usrTable."` (`name`,`phoneNumber`,`gender`,`language`,`age`,`City`) 
+	"INSERT INTO smsplay.users (name, phoneNumber, gender, language, age, city) 
 	VALUES (NULL,'".$from."',NULL,NULL,NULL,NULL )" ));
          
                     
@@ -55,7 +55,7 @@ if(empty($isQuery) && empty($text)){
            //at least user is in the database
            //Update name and send SMS for age
             $thirdUdpateNameSql =$session->execute(new Cassandra\SimpleStatement(
-		 "UPDATE `".$usrTable."` SET `name`='".$text."' WHERE `phoneNumber`=".$from." " ));
+		 "UPDATE smsplay.users SET name='".$text."' WHERE `phoneNumber`=".$from." " ));
          
                     
            //send SMS to get Name
@@ -74,12 +74,12 @@ if(empty($isQuery) && empty($text)){
            //at least user is in the database
            //Update age and send SMS for City
             $fourthAgeSql =$session->execute(new Cassandra\SimpleStatement(
-		 "UPDATE `".$usrTable."` SET `age`='".$text."' WHERE `phoneNumber`=".$from." " ));
+		 "UPDATE smsplay.users SET age='".$text."' WHERE phoneNumber='".$from."' " ));
           
                     
            //send SMS to get Name
             $recipients = $from;
-            $message    = "Hi".$isQuery['name']." What is your City? Mji yako? ";
+            $message    = "Hi ".$isQuery['name']." What is your City? Mji wako? ";
             $gateway    = new AfricasTalkingGateway($username, $apikey);
             try { 
               $results = $gateway->sendMessage($recipients, $message, $code);
@@ -88,11 +88,11 @@ if(empty($isQuery) && empty($text)){
               echo "Encountered an error while sending: ".$e->getMessage();
             }
         //check if all user fields are completed    
-        }elseif($isQuery['City']==NULL){                  
+        }elseif($isQuery['city']==NULL){                  
            //at least user is in the database
            //Update City and send SMS for gender
             $fifthAgeSql =$session->execute(new Cassandra\SimpleStatement(
-		 "UPDATE `".$usrTable."` SET `City`='".$text."' WHERE `phoneNumber`=".$from." " )); 
+		 "UPDATE smsplay.users SET city='".$text."' WHERE phoneNumber='".$from."' " )); 
             
                     
            //send SMS to get Name
@@ -111,7 +111,7 @@ if(empty($isQuery) && empty($text)){
            //at least user is in the database
            //Update gender and send SMS for age
             $sixthGenderSql = $session->execute(new Cassandra\SimpleStatement(
-		"UPDATE `".$usrTable."` SET `gender`='".$text."' WHERE `phoneNumber`=".$from." " ));
+		"UPDATE smsplay.users SET gender='".$text."' WHERE `phoneNumber`='".$from."' " ));
             
                     
            //send SMS to get Name
@@ -130,7 +130,7 @@ if(empty($isQuery) && empty($text)){
            //at least user is in the database
            //Update language and send welcome SMS
             $seventhLangSql = $session->execute(new Cassandra\SimpleStatement
-	"UPDATE `".$usrTable."` SET `language`='".$text."' WHERE `phoneNumber`=".$from." "));
+	"UPDATE smsplay.users SET language='".$text."' WHERE phoneNumber='".$from."' "));
             
                     
            //send SMS to get Name
@@ -147,15 +147,16 @@ if(empty($isQuery) && empty($text)){
         }
 //if query is not empty and all user fields are filled and text is empty send questions and update waiting to true
 //User is returning to receive a question
-}elseif($isQuery && $isQuery['language']!=NULL && empty($text)){ //I.E all personal details are up to date...
-  //{correct}     //Query for random qn from Questions table where answer is null and phoneNumber!=$phoneNumber
-                  $eighthAnsQuery = $session->execute(new Cassandra\SimpleStatement(
-			"SELECT * FROM `".$ansTable."` WHERE `phoneNumber` NOT LIKE '%".$from."%' 
-			ORDER BY RAND() LIMIT 1"));
-                      
+}elseif($isQuery && $isQuery['language']!=NULL && empty($text)){ 
+	//I.E all personal details are up to date...
+  	//Find a question from 
+$eighthAnsQuery = $session->execute(new Cassandra\SimpleStatement(
+"SELECT * FROM smsplay.qn WHERE phoneNumber >'".$from."' AND phoneNumber <'".$from."' LIMIT 1 ALLOW FILTERING"));
+    //Grab the marks
+      $theMarks = $eighthAnsQuery['marks']
     //If successful, send Question, create phoneNumber and make waiting true
     if($eighthAnsQuery){
-            //Send this question
+            //Grab and send this question
             $messageAns = $eighthAnsQuery['qn'];
             //send SMS to get Age
             $recipients = $from;
@@ -167,9 +168,8 @@ if(empty($isQuery) && empty($text)){
             
             //Create a new record with the phoneNumber and waiting is true
             $ninthAddQuery = $session->execute(new Cassandra\SimpleStatement(
-		"INSERT INTO `".$ansTable."` (`qn`,`phoneNumber`,`ans`,`waiting`) 
-		VALUES (NULL,'".$messageAns."','.$from.','.$waiting.')"));
-            
+		"INSERT INTO smsplay.qn (qn, ans, marks, phoneNumber, waiting) 
+		VALUES ('".$messageAns."',NULL,'".$theMarks."','".$from."','".$waiting."')"));
 
     }
 //if query is not empty and all user fields are filled and text is not empty 
@@ -180,19 +180,19 @@ if(empty($isQuery) && empty($text)){
             $notwaiting = false;
     //Update last question with $text where phoneNumber = $phoneNumber and waiting = 'TRUE'
     $tenthWaitSql = $session->execute(new Cassandra\SimpleStatement(
-	"UPDATE `".$ansTable."` SET `waiting`='".$notwaiting."', `ans`='".$text."' 
-	WHERE `phoneNumber`='".$from."' AND `waiting`='".$waiting."' "));
+	"UPDATE smsplay.qn SET waiting='".$notwaiting."', ans='".$text."' 
+	WHERE phoneNumber='".$from."' AND waiting='".$waiting."' ALLOW FILTERING"));
 
-            //Next
-            //Query for random qn from Questions table where phoneNumber!=$phoneNumber
-                  $eleventhAnsQuery =$session->execute(new Cassandra\SimpleStatement(
-		 "SELECT * FROM `".$ansTable."` WHERE `phoneNumber` NOT LIKE '%".$from."%' ORDER BY RAND() LIMIT 1"));
-    
+   //Next
+   //Query for random qn from Questions table where phoneNumber!=$phoneNumber
+   $eleventhAnsQuery =$session->execute(new Cassandra\SimpleStatement(
+"SELECT * FROM smsplay.qn WHERE phoneNumber >'".$from."' AND phoneNumber <'".$from."' LIMIT 1 ALLOW FILTERING"));
+    //Grab the marks
+    $otherMarks = $eleventhAnsQuery['marks'];
             //If successful, send Question, create phoneNumber and make waiting true
             if($eleventhAnsQuery){
             //Send this question
             $messageAns = $eleventhAnsQuery['qn'];
-            //send SMS to get Age
             $recipients = $from;
             $message    = $messageAns;
             $waiting = true;
@@ -202,9 +202,10 @@ if(empty($isQuery) && empty($text)){
             }
 //Create a new record with the phoneNumber and waiting is true
 $twelfthAddQuery = $selector->execute(new Cassandra\SimpleStatement(
-" INSERT INTO `'.$ansTable.'` (`qn`,`phoneNumber`,`ans`,`waiting`) 
-VALUES (NULL,'".$messageAns."','".$from."','".$waiting."')"
+" INSERT INTO smsplay.qn (qn, ans, marks, phoneNumber, waiting) 
+VALUES ('".$messageAns."',NULL,'".$otherMarks."','".$from."','".$waiting."')"
 ));
+
 
 }
 
